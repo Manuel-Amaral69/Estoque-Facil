@@ -386,7 +386,7 @@ function atualizarTotalVenda() {
 }
 
 // ================= FINALIZAR VENDA =================
-function finalizarVenda() {
+async function finalizarVenda() {
   if (filaCompra.length === 0) {
     alert('Adicione produtos à fila antes de finalizar a venda.');
     return;
@@ -408,38 +408,29 @@ function finalizarVenda() {
     }
   }
 
-  const atualizacoes = filaCompra.map(item => {
-    const produto = estoqueData.find(prod => prod.id === item.id);
-    const quantidadeAtual = Number(produto.quantidade) || 0;
-    const novaQuantidade = quantidadeAtual - Number(item.quantidade);
-
-    return fetch(`/estoque/${item.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+  try {
+    const resposta = await fetch('/vendas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        nome: produto.nome_produto,
-        quantidade: novaQuantidade,
-        codigo_barras: produto.codigo_barras,
-        valor_compra: produto.valor_compra,
-        valor_venda: produto.valor_venda,
-        min_stock: produto.min_stock
+        userGP,
+        itens: filaCompra.map(item => ({ id: item.id, quantidade: item.quantidade }))
       })
     });
-  });
+    const resultado = await resposta.json();
 
-  Promise.all(atualizacoes)
-    .then(() => {
-      filaCompra = [];
-      fecharVendaPopup();
-      carregarEstoque();
-      alert('Venda concluída com sucesso!');
-    })
-    .catch(error => {
-      console.error(error);
-      alert('Ocorreu um erro ao finalizar a venda. Verifique o estoque e tente novamente.');
-    });
+    if (!resposta.ok || !resultado.success) {
+      throw new Error('Não foi possível registrar a venda. Verifique o estoque e tente novamente.');
+    }
+
+    filaCompra = [];
+    fecharVendaPopup();
+    carregarEstoque();
+    alert('Venda concluída com sucesso!');
+  } catch (error) {
+    console.error(error);
+    alert(error.message || 'Ocorreu um erro ao finalizar a venda. Verifique o estoque e tente novamente.');
+  }
 }
 
 // ================= FUNÇÃO DE REMOVER PRODUTO ================= 

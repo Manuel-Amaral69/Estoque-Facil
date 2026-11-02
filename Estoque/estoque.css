@@ -44,6 +44,29 @@ body {
   font-size: 24px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-historico {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: #713c24;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.btn-historico:hover {
+  background: var(--orange-soft);
+}
+
 .app-main {
   display: grid;
   gap: 18px;

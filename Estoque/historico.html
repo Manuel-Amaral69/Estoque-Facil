@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Histórico de vendas</title>
+  <link rel="stylesheet" href="historico.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-content">
+      <a class="back-link" href="estoque.html" aria-label="Voltar ao estoque">‹ Estoque</a>
+      <h1>Histórico de vendas</h1>
+      <span class="header-spacer" aria-hidden="true"></span>
+    </div>
+  </header>
+
+  <main class="history-main">
+    <section class="summary" aria-label="Resumo das vendas">
+      <div class="summary-item">
+        <span class="summary-label">Vendas registradas</span>
+        <strong id="sales-count">0</strong>
+      </div>
+      <div class="summary-item summary-total">
+        <span class="summary-label">Valor total</span>
+        <strong id="sales-total">R$ 0,00</strong>
+      </div>
+    </section>
+
+    <section class="history-section" aria-labelledby="history-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">REGISTROS</p>
+          <h2 id="history-title">Vendas realizadas</h2>
+        </div>
+        <div class="filters">
+          <label for="search-sales">Buscar produto</label>
+          <input id="search-sales" type="search" placeholder="Nome do produto">
+          <label for="filter-date">Data</label>
+          <input id="filter-date" type="date">
+        </div>
+      </div>
+      <p id="history-status" class="status-message" role="status" aria-live="polite">Carregando vendas...</p>
+      <div id="sales-list" class="sales-list"></div>
+    </section>
+  </main>
+
+  <script src="historico.js"></script>
+</body>
+</html>
