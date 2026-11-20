@@ -74,6 +74,67 @@ input {
   flex-wrap: wrap;
 }
 
+.push-settings {
+  position: relative;
+}
+
+.push-settings > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--orange-border);
+  border-radius: 14px;
+  background: var(--orange-pale);
+  color: var(--text-strong);
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.push-settings > summary::-webkit-details-marker {
+  display: none;
+}
+
+.push-settings-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: min(290px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--orange-border);
+  border-radius: 12px;
+  background: var(--surface-alt);
+  box-shadow: 0 12px 28px var(--shadow);
+}
+
+.push-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.push-toggle input {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--orange-dark);
+}
+
+#push-status {
+  margin: 12px 0 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .btn-historico,
 .btn-venda,
 .btn-adicionar,

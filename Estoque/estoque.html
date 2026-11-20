@@ -4,6 +4,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#ff7f2a">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
   <title>Estoque</title>
   <link rel="stylesheet" href="estoque.css">
 </head>
@@ -15,6 +21,16 @@
       <nav class="header-actions" aria-label="Ações do estoque">
         <a class="btn-historico" href="historico.html">Histórico de vendas</a>
         <button class="btn-venda" onclick="abrirVendaPopup()">Realizar venda</button>
+        <details class="push-settings">
+          <summary>Notificações</summary>
+          <div class="push-settings-panel">
+            <label class="push-toggle" for="push-toggle">
+              <input id="push-toggle" type="checkbox">
+              <span>Receber alertas de estoque</span>
+            </label>
+            <p id="push-status" role="status" aria-live="polite">Verificando dispositivo...</p>
+          </div>
+        </details>
       </nav>
     </div>
   </header>
@@ -112,6 +128,7 @@
   </div>
 
   <script src="/node_modules/html5-qrcode/html5-qrcode.min.js"></script>
+  <script src="/pwa.js"></script>
   <script src="estoque.js"></script>
 
 </body>

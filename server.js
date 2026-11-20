@@ -3,6 +3,9 @@ const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const bodyParser = require("body-parser");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
+const crypto = require("crypto");
+const webpush = require("web-push");
 
 // ================= CONFIGURAÇÃO DO SERVIDOR =================
 const app = express();
@@ -15,6 +18,7 @@ app.get("/", (req, res) => {
 
 // Habilita CORS para permitir requisições externas
 app.use(cors());
+app.use(cookieParser());
 
 // Permite o uso de JSON no corpo das requisições
 app.use(bodyParser.json());
@@ -23,6 +27,43 @@ app.use(bodyParser.json());
 
 // Cria ou conecta ao banco SQLite
 const db = new sqlite3.Database("./database.db");
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || "";
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || "";
+const pushConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
+
+if (pushConfigured) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || "mailto:admin@example.com",
+    vapidPublicKey,
+    vapidPrivateKey
+  );
+}
+
+function hashToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function encryptSubscription(subscription) {
+  const keySource = process.env.PUSH_ENCRYPTION_KEY || vapidPrivateKey;
+  if (!keySource) throw new Error("Configure PUSH_ENCRYPTION_KEY ou as chaves VAPID.");
+  const key = crypto.createHash("sha256").update(keySource).digest();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(subscription)), cipher.final()]);
+  return [iv.toString("hex"), cipher.getAuthTag().toString("hex"), encrypted.toString("base64")].join(".");
+}
+
+function decryptSubscription(payload) {
+  const keySource = process.env.PUSH_ENCRYPTION_KEY || vapidPrivateKey;
+  const [ivHex, tagHex, ciphertext] = payload.split(".");
+  const key = crypto.createHash("sha256").update(keySource).digest();
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"));
+  decipher.setAuthTag(Buffer.from(tagHex, "hex"));
+  return JSON.parse(Buffer.concat([
+    decipher.update(Buffer.from(ciphertext, "base64")),
+    decipher.final()
+  ]).toString("utf8"));
+}
 
 // Garante execução sequencial das operações
 db.serialize(() => {
@@ -73,6 +114,32 @@ db.serialize(() => {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      expires_at TEXT NOT NULL
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      group_id INTEGER NOT NULL,
+      endpoint_hash TEXT NOT NULL UNIQUE,
+      encrypted_subscription TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS product_alert_state (
+      product_id INTEGER PRIMARY KEY,
+      condition TEXT NOT NULL DEFAULT 'healthy'
+    )
+  `);
+
   // ================= INSERÇÃO DE USUÁRIO PADRÃO =================
   db.run(`
     INSERT OR IGNORE INTO users (id, user, pass, group_id)
@@ -100,13 +167,179 @@ app.post("/login", (req, res) => {
 
       // Retorna sucesso e o grupo do usuário, caso encontrado
       if (row) {
-        return res.json({ success: true, userGP: row.group_id });
+        const token = crypto.randomBytes(32).toString("base64url");
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        db.run("DELETE FROM auth_sessions WHERE expires_at <= ?", [new Date().toISOString()]);
+        return db.run(
+          "INSERT INTO auth_sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+          [hashToken(token), row.id, expiresAt],
+          (sessionError) => {
+            if (sessionError) {
+              console.error("Erro ao criar sessão:", sessionError);
+              return res.status(500).json({ success: false });
+            }
+            res.cookie("estoque_session", token, {
+              httpOnly: true,
+              secure: process.env.NODE_ENV === "production",
+              sameSite: "lax",
+              maxAge: 30 * 24 * 60 * 60 * 1000,
+              path: "/"
+            });
+            return res.json({ success: true, userGP: row.group_id });
+          }
+        );
       }
 
       // Caso não encontre usuário válido
       return res.json({ success: false });
     }
   );
+});
+
+function requirePushAuth(req, res, next) {
+  const token = req.cookies.estoque_session;
+  if (!token) return res.status(401).json({ success: false });
+
+  db.get(
+    `SELECT u.id AS user_id, u.group_id
+     FROM auth_sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = ? AND s.expires_at > ?`,
+    [hashToken(token), new Date().toISOString()],
+    (err, session) => {
+      if (err || !session) return res.status(401).json({ success: false });
+      req.pushUser = session;
+      next();
+    }
+  );
+}
+
+function evaluateGroupStock(groupId) {
+  if (!pushConfigured) return;
+  db.all("SELECT * FROM estoque WHERE group_id = ?", [groupId], (stockError, products) => {
+    if (stockError || !products?.length) return;
+    db.all(
+      `SELECT p.id, p.encrypted_subscription
+       FROM push_subscriptions p JOIN users u ON u.id = p.user_id
+       WHERE p.group_id = ? AND u.group_id = ?`,
+      [groupId, groupId],
+      (subError, subscriptions) => {
+      if (subError || !subscriptions?.length) return;
+
+      products.forEach((product) => {
+        const condition = product.quantidade <= 0
+          ? "out"
+          : product.quantidade <= (Number(product.min_stock) || 0) ? "low" : "healthy";
+
+        db.run(
+          "INSERT OR IGNORE INTO product_alert_state (product_id, condition) VALUES (?, 'healthy')",
+          [product.id],
+          (insertError) => {
+            if (insertError) return console.error("Erro ao preparar estado do alerta:", insertError);
+            db.run(
+              "UPDATE product_alert_state SET condition = ? WHERE product_id = ? AND condition != ?",
+              [condition, product.id, condition],
+              function (updateError) {
+                if (updateError || this.changes !== 1 || condition === "healthy") return;
+                const title = condition === "out" ? "Produto sem estoque" : "Estoque mínimo atingido";
+                const body = `${product.nome_produto}: quantidade atual ${product.quantidade}.`;
+                const message = JSON.stringify({
+                  title,
+                  body,
+                  url: "/Estoque/estoque.html",
+                  tag: `estoque-${product.id}-${condition}`,
+                  productId: product.id,
+                  quantity: product.quantidade
+                });
+
+                subscriptions.forEach((row) => {
+                  let subscription;
+                  try {
+                    subscription = decryptSubscription(row.encrypted_subscription);
+                  } catch (decryptError) {
+                    console.error("Não foi possível descriptografar inscrição push:", decryptError);
+                    return;
+                  }
+                  webpush.sendNotification(subscription, message).catch((pushError) => {
+                    if (pushError.statusCode === 404 || pushError.statusCode === 410) {
+                      db.run("DELETE FROM push_subscriptions WHERE id = ?", [row.id]);
+                    } else {
+                      console.error("Falha ao enviar notificação push:", pushError.message);
+                    }
+                  });
+                });
+              }
+            );
+          }
+        );
+      });
+      }
+    );
+  });
+}
+
+app.get("/api/push/public-key", (req, res) => {
+  if (!pushConfigured) return res.status(503).json({ success: false, error: "Push não configurado." });
+  res.json({ success: true, publicKey: vapidPublicKey });
+});
+
+app.get("/api/push/subscription", requirePushAuth, (req, res) => {
+  const endpoint = req.query.endpoint;
+  if (!endpoint) return res.json({ success: true, enabled: false });
+  db.get(
+    "SELECT id FROM push_subscriptions WHERE user_id = ? AND endpoint_hash = ?",
+    [req.pushUser.user_id, hashToken(endpoint)],
+    (err, row) => {
+      if (err) return res.status(500).json({ success: false });
+      res.json({ success: true, enabled: Boolean(row) });
+    }
+  );
+});
+
+app.post("/api/push/subscription", requirePushAuth, (req, res) => {
+  if (!pushConfigured) return res.status(503).json({ success: false, error: "Push não configurado." });
+  const subscription = req.body?.subscription;
+  if (!subscription?.endpoint?.startsWith("https://") || !subscription.keys?.p256dh || !subscription.keys?.auth) {
+    return res.status(400).json({ success: false, error: "Inscrição push inválida." });
+  }
+
+  let encrypted;
+  try {
+    encrypted = encryptSubscription(subscription);
+  } catch (error) {
+    return res.status(503).json({ success: false, error: error.message });
+  }
+  const endpointHash = hashToken(subscription.endpoint);
+  db.run(
+    `INSERT INTO push_subscriptions (user_id, group_id, endpoint_hash, encrypted_subscription)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(endpoint_hash) DO UPDATE SET user_id = excluded.user_id,
+       group_id = excluded.group_id, encrypted_subscription = excluded.encrypted_subscription`,
+    [req.pushUser.user_id, req.pushUser.group_id, endpointHash, encrypted],
+    (err) => {
+      if (err) return res.status(500).json({ success: false });
+      evaluateGroupStock(req.pushUser.group_id);
+      res.json({ success: true });
+    }
+  );
+});
+
+app.delete("/api/push/subscription", requirePushAuth, (req, res) => {
+  const endpoint = req.body?.endpoint;
+  if (!endpoint) return res.status(400).json({ success: false });
+  db.run(
+    "DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint_hash = ?",
+    [req.pushUser.user_id, hashToken(endpoint)],
+    (err) => err ? res.status(500).json({ success: false }) : res.json({ success: true })
+  );
+});
+
+app.post("/api/logout", requirePushAuth, (req, res) => {
+  const token = req.cookies.estoque_session;
+  db.run("DELETE FROM auth_sessions WHERE token_hash = ?", [hashToken(token)], (err) => {
+    if (err) return res.status(500).json({ success: false });
+    res.clearCookie("estoque_session", { httpOnly: true, sameSite: "lax", path: "/" });
+    res.json({ success: true });
+  });
 });
 
 // ================= ROTA PARA BUSCAR ESTOQUE =================
@@ -192,6 +425,7 @@ app.post("/vendas", (req, res) => {
                 if (itemIndice >= itensVenda.length) {
                   return db.run("COMMIT", (commitError) => {
                     if (commitError) return cancelarVenda(commitError, 500);
+                    evaluateGroupStock(userGP);
                     res.json({ success: true, vendaId, total });
                   });
                 }
@@ -299,6 +533,7 @@ app.post("/estoque", (req, res) => {
               return res.json({ success: false });
             }
 
+            evaluateGroupStock(userGP);
             return res.json({ success: true, updated: true });
           }
         );
@@ -317,6 +552,7 @@ app.post("/estoque", (req, res) => {
               return res.json({ success: false });
             }
 
+            evaluateGroupStock(userGP);
             return res.json({ success: true, created: true });
           }
         );
@@ -335,6 +571,7 @@ app.delete("/estoque/:id", (req, res) => {
       return res.json({ success: false });
     }
 
+    db.run("DELETE FROM product_alert_state WHERE product_id = ?", [id]);
     res.json({ success: true });
   });
 });
@@ -368,6 +605,9 @@ app.put("/estoque/:id", (req, res) => {
         return res.json({ success: false });
       }
 
+      db.get("SELECT group_id FROM estoque WHERE id = ?", [id], (lookupError, product) => {
+        if (!lookupError && product) evaluateGroupStock(product.group_id);
+      });
       res.json({ success: true });
     }
   );
@@ -375,6 +615,10 @@ app.put("/estoque/:id", (req, res) => {
 
 // ================= INICIALIZAÇÃO DO SERVIDOR =================
 const PORT = process.env.PORT || 3000;
+
+db.all("SELECT DISTINCT group_id FROM push_subscriptions", (err, groups) => {
+  if (!err) groups.forEach((group) => evaluateGroupStock(group.group_id));
+});
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor em execução na porta ${PORT}`);

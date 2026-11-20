@@ -44,7 +44,7 @@ function carregarEstoque() {
       data.forEach(item => {
 
         const div = document.createElement("div");
-        div.className = "produto" + (item.quantidade < (item.min_stock || 0) ? " low-stock" : "");
+        div.className = "produto" + (item.quantidade <= (item.min_stock || 0) ? " low-stock" : "");
         div.id = `produto-${item.id}`;
 
         div.innerHTML = `
@@ -451,7 +451,118 @@ function logout() {
   window.location.href = "../Login/login.html";
 }
 
+function pushFetch(url, options = {}) {
+  return fetch(url, { ...options, credentials: "same-origin" });
+}
+
+function chaveVapidParaBytes(chave) {
+  const padding = "=".repeat((4 - chave.length % 4) % 4);
+  const base64 = (chave + padding).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(base64), caractere => caractere.charCodeAt(0));
+}
+
+async function atualizarEstadoPush() {
+  const toggle = document.getElementById("push-toggle");
+  const status = document.getElementById("push-status");
+  if (!toggle || !status) return;
+
+  if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    toggle.disabled = true;
+    status.textContent = "Push requer HTTPS e um navegador compatível.";
+    return;
+  }
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      toggle.checked = false;
+      status.textContent = Notification.permission === "denied"
+        ? "Permissão bloqueada nas configurações do navegador."
+        : "Notificações desativadas neste dispositivo.";
+      return;
+    }
+    const resposta = await pushFetch(`/api/push/subscription?endpoint=${encodeURIComponent(subscription.endpoint)}`);
+    const resultado = await resposta.json();
+    toggle.checked = Boolean(resposta.ok && resultado.enabled);
+    status.textContent = toggle.checked
+      ? "Alertas ativos neste dispositivo."
+      : "Notificações desativadas neste dispositivo.";
+  } catch (error) {
+    status.textContent = "Não foi possível consultar as notificações.";
+    console.error(error);
+  }
+}
+
+async function ativarPush() {
+  const toggle = document.getElementById("push-toggle");
+  const status = document.getElementById("push-status");
+  if (Notification.permission === "denied") {
+    throw new Error("Permissão bloqueada nas configurações do navegador.");
+  }
+
+  const permissao = await Notification.requestPermission();
+  if (permissao !== "granted") throw new Error("Permissão para notificações não concedida.");
+
+  const chaveResposta = await fetch("/api/push/public-key");
+  const chaveDados = await chaveResposta.json();
+  if (!chaveResposta.ok) throw new Error(chaveDados.error || "Push não está configurado no servidor.");
+
+  const registration = await navigator.serviceWorker.ready;
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: chaveVapidParaBytes(chaveDados.publicKey)
+    });
+  }
+
+  const resposta = await pushFetch("/api/push/subscription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ subscription: subscription.toJSON() })
+  });
+  const resultado = await resposta.json();
+  if (!resposta.ok) throw new Error(resultado.error || "Não foi possível ativar as notificações.");
+  toggle.checked = true;
+  status.textContent = "Alertas ativos neste dispositivo.";
+}
+
+async function desativarPush() {
+  const toggle = document.getElementById("push-toggle");
+  const status = document.getElementById("push-status");
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  if (subscription) {
+    const resposta = await pushFetch("/api/push/subscription", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: subscription.endpoint })
+    });
+    if (!resposta.ok) throw new Error("Não foi possível remover este dispositivo do servidor.");
+    await subscription.unsubscribe();
+  }
+  toggle.checked = false;
+  status.textContent = "Notificações desativadas neste dispositivo.";
+}
+
+document.getElementById("push-toggle")?.addEventListener("change", async (event) => {
+  const toggle = event.currentTarget;
+  const status = document.getElementById("push-status");
+  toggle.disabled = true;
+  try {
+    if (toggle.checked) await ativarPush();
+    else await desativarPush();
+  } catch (error) {
+    toggle.checked = !toggle.checked;
+    status.textContent = error.message || "Não foi possível atualizar as notificações.";
+  } finally {
+    toggle.disabled = false;
+  }
+});
+
 // ================= INICIALIZAÇÃO =================
 
 // Carrega os dados do estoque ao abrir a página
-carregarEstoque();  
+carregarEstoque();
+atualizarEstadoPush();
