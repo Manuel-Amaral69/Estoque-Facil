@@ -2,13 +2,15 @@
 
 ## Configuração do servidor
 
-Use Node.js e instale as dependências do projeto com `npm install`. Gere um par VAPID uma única vez:
+Use Node.js e instale as dependências do projeto com `npm install`. Em desenvolvimento, não é necessário gerar chaves manualmente: no primeiro `npm start`, o servidor cria um par VAPID persistente em `data/vapid-keys.json` e o endpoint da chave pública fica disponível para o frontend. O diretório `data/` fica fora de `public/`, e o arquivo privado está ignorado pelo Git.
+
+Para produção, gere um par VAPID uma única vez se ainda não tiver:
 
 ```sh
 npx web-push generate-vapid-keys
 ```
 
-Configure as chaves no ambiente do processo que executa o servidor. Não coloque a chave privada no frontend nem em arquivos versionados:
+Configure as chaves no ambiente do processo que executa o servidor. Se as variáveis estiverem definidas, elas substituem o par local. Não coloque a chave privada no frontend nem em arquivos versionados:
 
 ```sh
 export VAPID_PUBLIC_KEY='chave-publica-gerada'
@@ -18,9 +20,9 @@ export PUSH_ENCRYPTION_KEY="$(openssl rand -hex 32)"
 npm start
 ```
 
-Guarde os valores em um gerenciador de segredos no ambiente de produção. `PUSH_ENCRYPTION_KEY` cifra as inscrições no SQLite; se não for informada, a chave VAPID privada será usada como fonte da chave de cifragem. Mantenha os valores estáveis entre reinícios. Alterar a chave de cifragem impede a leitura das inscrições já armazenadas e exige que os dispositivos ativem push novamente. Alterar o par VAPID também exige reinscrição dos dispositivos.
+Guarde os valores em um gerenciador de segredos no ambiente de produção. `PUSH_ENCRYPTION_KEY` cifra as inscrições no SQLite; se não for informada, a chave VAPID privada será usada como fonte da chave de cifragem. Mantenha os valores estáveis entre reinícios. Alterar a chave de cifragem impede a leitura das inscrições já armazenadas e exige que os dispositivos ativem push novamente. Alterar o par VAPID também exige reinscrição dos dispositivos. Faça backup protegido de `data/vapid-keys.json` em desenvolvimento; perdê-lo invalida as inscrições existentes.
 
-O app pode ser usado em `http://localhost:3000` para desenvolvimento. Em dispositivos e em produção, publique o site em HTTPS, preservando o mesmo domínio e protocolo para frontend e API. O Service Worker, a instalação e a Web Push API exigem contexto seguro. Configure TLS no servidor/reverse proxy e encaminhe as requisições para a porta da aplicação.
+O app pode ser usado em `http://localhost:3000` para desenvolvimento. Para testar no celular, use um endereço HTTPS público ou uma configuração local segura suportada pelo dispositivo (por exemplo, `adb reverse` e `http://localhost:3000` no Android). Acessar o IP local do computador por HTTP não é contexto seguro. Em produção, publique frontend e API sob HTTPS no mesmo domínio. O Service Worker, a instalação e a Web Push API exigem contexto seguro. Configure TLS no servidor/reverse proxy e encaminhe as requisições para a porta da aplicação.
 
 ## Testar
 

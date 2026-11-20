@@ -5,6 +5,7 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
+const fs = require("fs");
 const path = require("path");
 const webpush = require("web-push");
 
@@ -35,9 +36,44 @@ app.use(bodyParser.json());
 
 // Cria ou conecta ao banco SQLite
 const db = new sqlite3.Database(path.join(__dirname, "database.db"));
-const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || "";
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || "";
-const pushConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
+const vapidKeysPath = path.join(__dirname, "data", "vapid-keys.json");
+
+// Reaproveita chaves configuradas no ambiente ou cria um par local persistente.
+function loadVapidKeys() {
+  const publicKey = process.env.VAPID_PUBLIC_KEY;
+  const privateKey = process.env.VAPID_PRIVATE_KEY;
+  if (Boolean(publicKey) !== Boolean(privateKey)) {
+    throw new Error("Configure VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY juntas.");
+  }
+  if (publicKey && privateKey) return { publicKey, privateKey };
+
+  fs.mkdirSync(path.dirname(vapidKeysPath), { recursive: true, mode: 0o700 });
+  if (fs.existsSync(vapidKeysPath)) {
+    const savedKeys = JSON.parse(fs.readFileSync(vapidKeysPath, "utf8"));
+    if (!savedKeys.publicKey || !savedKeys.privateKey) {
+      throw new Error(`Arquivo VAPID inválido: ${vapidKeysPath}`);
+    }
+    fs.chmodSync(vapidKeysPath, 0o600);
+    return savedKeys;
+  }
+
+  const generatedKeys = webpush.generateVAPIDKeys();
+  try {
+    fs.writeFileSync(vapidKeysPath, JSON.stringify(generatedKeys, null, 2), {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600
+    });
+    console.log("Par VAPID local criado em data/vapid-keys.json");
+    return generatedKeys;
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    return JSON.parse(fs.readFileSync(vapidKeysPath, "utf8"));
+  }
+}
+
+const { publicKey: vapidPublicKey, privateKey: vapidPrivateKey } = loadVapidKeys();
+const pushConfigured = true;
 
 if (pushConfigured) {
   webpush.setVapidDetails(
