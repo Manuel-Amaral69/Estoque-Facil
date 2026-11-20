@@ -75,6 +75,7 @@ input {
 }
 
 .push-settings {
+  display: none;
   position: relative;
 }
 
@@ -639,10 +640,37 @@ input:focus {
 
   .header-content {
     min-height: 68px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 10px;
+    padding-block: 12px;
   }
 
   .header-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
     gap: 8px;
+  }
+
+  .push-settings {
+    display: block;
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .header-actions > .btn-historico,
+  .header-actions > .btn-venda,
+  .push-settings > summary {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .push-settings-panel {
+    right: 0;
+    left: 0;
+    width: 100%;
   }
 
   .btn-historico,

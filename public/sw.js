@@ -1,4 +1,4 @@
-const CACHE_NAME = "estoque-facil-v1";
+const CACHE_NAME = "estoque-facil-v3";
 const APP_SHELL = [
   "/Login/login.html",
   "/Login/login.css",
@@ -18,7 +18,9 @@ const APP_SHELL = [
 
 // Prepara os arquivos da interface para que as telas abram sem rede.
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(
+    APP_SHELL.map((url) => new Request(url, { cache: "reload" }))
+  )));
   self.skipWaiting();
 });
 
