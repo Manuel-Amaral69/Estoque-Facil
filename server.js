@@ -5,15 +5,23 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
+const path = require("path");
 const webpush = require("web-push");
 
 // ================= CONFIGURAÇÃO DO SERVIDOR =================
 const app = express();
- 
-app.use(express.static(__dirname));
+const publicDirectory = path.join(__dirname, "public");
+
+// Publica somente os arquivos do frontend, sem expor o banco ou o codigo do servidor.
+app.use(express.static(publicDirectory));
+
+// Disponibiliza apenas o bundle usado pelo leitor de codigo de barras.
+app.get("/vendor/html5-qrcode/html5-qrcode.min.js", (req, res) => {
+  res.sendFile(path.join(__dirname, "node_modules", "html5-qrcode", "html5-qrcode.min.js"));
+});
 
 app.get("/", (req, res) => {
-    res.sendFile(__dirname + "/Login/login.html");
+  res.sendFile(path.join(publicDirectory, "Login", "login.html"));
 });
 
 // Habilita CORS para permitir requisições externas
@@ -26,7 +34,7 @@ app.use(bodyParser.json());
 // ================= CONFIGURAÇÃO DO BANCO DE DADOS =================
 
 // Cria ou conecta ao banco SQLite
-const db = new sqlite3.Database("./database.db");
+const db = new sqlite3.Database(path.join(__dirname, "database.db"));
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || "";
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || "";
 const pushConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
@@ -196,6 +204,7 @@ app.post("/login", (req, res) => {
   );
 });
 
+// ================= AUTENTICACAO E INSCRICOES PUSH =================
 function requirePushAuth(req, res, next) {
   const token = req.cookies.estoque_session;
   if (!token) return res.status(401).json({ success: false });
@@ -213,6 +222,7 @@ function requirePushAuth(req, res, next) {
   );
 }
 
+// Envia um alerta apenas quando o produto muda para outra condicao de estoque.
 function evaluateGroupStock(groupId) {
   if (!pushConfigured) return;
   db.all("SELECT * FROM estoque WHERE group_id = ?", [groupId], (stockError, products) => {
@@ -342,6 +352,7 @@ app.post("/api/logout", requirePushAuth, (req, res) => {
   });
 });
 
+// ================= ROTAS DE ESTOQUE =================
 // ================= ROTA PARA BUSCAR ESTOQUE =================
 app.get("/estoque/:userGP", (req, res) => {
 
@@ -366,7 +377,7 @@ app.get("/estoque/:userGP", (req, res) => {
   );
 });
 
-// ================= ROTAS DE HISTÓRICO DE VENDAS =================
+// ================= ROTAS DE HISTORICO DE VENDAS =================
 app.get("/vendas/:userGP", (req, res) => {
   db.all(
     `SELECT v.id, v.created_at, v.total, vi.produto_id, vi.nome_produto,

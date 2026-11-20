@@ -3,6 +3,7 @@ const salesList = document.getElementById('sales-list');
 const historyStatus = document.getElementById('history-status');
 let vendas = [];
 
+// ================= VALIDACAO DA SESSAO =================
 if (!userGP) {
   alert('Sessão inválida. Faça login novamente.');
   window.location.href = '../Login/login.html';
@@ -13,6 +14,7 @@ if (!userGP) {
 document.getElementById('search-sales').addEventListener('input', renderizarHistorico);
 document.getElementById('filter-date').addEventListener('change', renderizarHistorico);
 
+// ================= CARREGAMENTO DO HISTORICO =================
 async function carregarHistorico() {
   try {
     const resposta = await fetch(`/vendas/${encodeURIComponent(userGP)}`);
@@ -41,6 +43,7 @@ async function carregarHistorico() {
   }
 }
 
+// ================= FILTRO E EXIBICAO DAS VENDAS =================
 function renderizarHistorico() {
   const busca = document.getElementById('search-sales').value.trim().toLocaleLowerCase('pt-BR');
   const dataSelecionada = document.getElementById('filter-date').value;
@@ -63,6 +66,7 @@ function renderizarHistorico() {
   filtradas.forEach(venda => salesList.appendChild(criarVenda(venda)));
 }
 
+// Cria cada registro usando elementos DOM para manter os dados como texto.
 function criarVenda(venda) {
   const artigo = document.createElement('article');
   artigo.className = 'sale-entry';
@@ -97,6 +101,7 @@ function criarVenda(venda) {
   return artigo;
 }
 
+// ================= FORMATACAO DE VALORES =================
 function formatarMoeda(valor) {
   return Number(valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }

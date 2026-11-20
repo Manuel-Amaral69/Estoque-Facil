@@ -9,13 +9,14 @@ const APP_SHELL = [
   "/Estoque/historico.html",
   "/Estoque/historico.css",
   "/Estoque/historico.js",
-  "/node_modules/html5-qrcode/html5-qrcode.min.js",
+  "/vendor/html5-qrcode/html5-qrcode.min.js",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/pwa.js"
 ];
 
+// Prepara os arquivos da interface para que as telas abram sem rede.
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
   self.skipWaiting();
@@ -29,6 +30,7 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// Usa cache para arquivos locais e a rede como primeira opção para navegações.
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET" || new URL(request.url).origin !== self.location.origin) return;
@@ -47,6 +49,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(caches.match(request).then((cached) => cached || fetch(request)));
 });
 
+// Exibe os alertas enviados pelo servidor mesmo com o app fechado.
 self.addEventListener("push", (event) => {
   let data = {};
   try {
@@ -65,6 +68,7 @@ self.addEventListener("push", (event) => {
   }));
 });
 
+// Abre ou foca a tela de estoque ao tocar em uma notificação.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const target = new URL(event.notification.data?.url || "/Estoque/estoque.html", self.location.origin).href;

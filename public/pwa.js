@@ -1,3 +1,4 @@
+// Registra o worker apenas em contexto seguro, requisito da plataforma PWA.
 if ("serviceWorker" in navigator && window.isSecureContext) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch((error) => {

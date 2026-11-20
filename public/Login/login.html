@@ -1,7 +1,5 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-<link rel="stylesheet" href="/Login/login.css">
-<script src="/Login/login.js"></script>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,22 +9,24 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/Login/login.css">
     <title>Login</title>
+    <script src="/Login/login.js" defer></script>
+    <script src="/pwa.js" defer></script>
 </head>
 
 <body>
     <div id="login">
         <h1>Estoque Fácil</h1>
-        <input type="text" placeholder="Usuário" name="user" id="user">
+        <input type="text" placeholder="Usuário" name="user" id="user" autocomplete="username" required>
         <br>
         <p></p>
-        <input type="text" placeholder="Senha" name="pass" id="pass">
+        <input type="password" placeholder="Senha" name="pass" id="pass" autocomplete="current-password" required>
         <br>
         <p></p>
         <button onclick="login()">Login</button>
     </div>
 
-    <script src="/pwa.js" defer></script>
 </body>
 
 </html>
